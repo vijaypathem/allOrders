@@ -6,33 +6,27 @@ let uniqueIndustries = new Set();
 // Helper: Extract Display Value from Zoho Fields
 // ===============================
 function getFieldValue(field) {
-  // Handle null/undefined
-  if (field === null || field === undefined) {
-    return '';
-  }
-  
   // Handle lookup fields (objects with display_value)
   if (typeof field === 'object') {
-    // Check for display_value first
+    // For multi-select or lookup collections
+    if (Array.isArray(field)) {
+      const values = field.map(item => getFieldValue(item)).filter(v => v);
+      return values.length > 0 ? values.join(', ') : '';
+    }
+    
+    // Check for display_value first (most common for lookup fields)
     if (field.display_value !== undefined && field.display_value !== null) {
       return field.display_value;
+    }else {
+      return field;
     }
-    // Check for value property
-    if (field.value !== undefined && field.value !== null) {
-      return field.value;
-    }
-    // Check for ID but only if it's meaningful
-    if (field.ID !== undefined && field.ID !== null) {
-      // Don't return ID if it looks like an internal ID
-      // Only return it if there's really no other option
-      return '';
-    }
-    // If object but no usable value, return empty
-    return '';
+    
+    
+
   }
   
-  // Handle regular values
-  return field || '';
+  // Handle regular values - return as is (could be empty string, number, etc.)
+  return field ;
 }
 
 // ===============================
@@ -98,7 +92,7 @@ function populateIndustryFilter() {
   
   // Add each unique industry as an option
   sortedIndustries.forEach(industry => {
-    if (industry && industry !== 'N/A') {
+    if (industry) {
       filterSelect.append(`<option value="${industry}">${industry}</option>`);
     }
   });
@@ -132,7 +126,7 @@ function fetchAllRecords() {
           // Collect unique industries
           response.data.forEach(record => {
             const industry = getFieldValue(record.Industry);
-            if (industry && industry !== 'N/A') {
+            if (industry) {
               uniqueIndustries.add(industry);
             }
           });
@@ -183,7 +177,7 @@ function renderTable(data) {
     const status = getFieldValue(record.Global_Status);
     
     const row = `
-      <tr data-jobno="${jobNo}" data-record-id="${record.ID}">
+      <tr data-jobno="${jobNo || ''}" data-record-id="${record.ID}">
         <td>${jobNo || '-'}</td>
         <td>${clientName || '-'}</td>
         <td>${jobType || '-'}</td>
@@ -205,9 +199,9 @@ function applyFilters() {
   console.log('Applying filters:', { jobFilter, clientFilter, industryFilter });
 
   const filtered = allRecords.filter(record => {
-    const jobNo = getFieldValue(record.Job_No).toString().toLowerCase();
-    const clientName = getFieldValue(record.Client_Name).toString().toLowerCase();
-    const industry = getFieldValue(record.Industry).toString();
+    const jobNo = (getFieldValue(record.Job_No) || '').toString().toLowerCase();
+    const clientName = (getFieldValue(record.Client_Name) || '').toString().toLowerCase();
+    const industry = (getFieldValue(record.Industry) || '').toString();
     
     const jobMatch = !jobFilter || jobNo.includes(jobFilter);
     const clientMatch = !clientFilter || clientName.includes(clientFilter);
@@ -218,6 +212,39 @@ function applyFilters() {
 
   console.log('Filtered records:', filtered.length);
   renderTable(filtered);
+}
+
+// ===============================
+// Normalize Record - Extract ALL field values properly
+// ===============================
+function normalizeRecord(record) {
+  const normalized = {};
+  
+  // Helper to extract from source
+  const extractFromSource = (source) => {
+    if (!source || typeof source !== 'object') return;
+    
+    Object.entries(source).forEach(([key, value]) => {
+      // Skip these meta fields
+      if (key === 'ID' || key === 'ROWID' || key === 'CREATORID' || key === 'MODIFIEDTIME' || key === 'Product_Details') {
+        return;
+      }
+      
+      const extractedValue = getFieldValue(value);
+      // Store ALL fields, even if empty
+      normalized[key] = extractedValue;
+    });
+  };
+  
+  // First extract from Product_Details if it exists
+  if (record.Product_Details && typeof record.Product_Details === 'object') {
+    extractFromSource(record.Product_Details);
+  }
+  
+  // Then extract from main record (will overwrite if duplicate keys exist)
+  extractFromSource(record);
+  
+  return normalized;
 }
 
 // ===============================
@@ -259,35 +286,13 @@ function fetchAndShowDetails(jobNo, parentRecord) {
     
     // Process Product Details
     if (prodResp && prodResp.code === 3000 && prodResp.data && prodResp.data.length) {
-      const raw = prodResp.data;
+      const rawRecords = prodResp.data;
+      
+      // Normalize all records
+      const prodRecords = rawRecords.map(normalizeRecord);
+      console.log('Normalized product records:', prodRecords);
 
-      // Normalize records - extract only the configured fields
-      const normalizeRecord = (r, allowedFields) => {
-        const out = {};
-        
-        // Get all possible sources of data
-        const sources = [r];
-        if (r.Product_Details && typeof r.Product_Details === 'object') {
-          sources.push(r.Product_Details);
-        }
-        
-        // Extract data from all sources, but ONLY for allowed fields
-        sources.forEach(source => {
-          Object.entries(source).forEach(([k, v]) => {
-            if (k !== 'Product_Details' && allowedFields.includes(k)) {
-              const value = getFieldValue(v);
-              // Only store non-empty values
-              if (value !== '' && value !== null && value !== undefined) {
-                out[k] = value;
-              }
-            }
-          });
-        });
-        
-        return out;
-      };
-
-      // Determine industry first
+      // Determine industry
       const industryRaw = getFieldValue(parentRecord.Industry) || getFieldValue(parentRecord.Job_Type) || "";
       let industryKey = "";
       
@@ -300,54 +305,28 @@ function fetchAndShowDetails(jobNo, parentRecord) {
 
       console.log('Industry detected:', industryKey, 'from:', industryRaw);
 
-      // Get allowed fields based on industry
-      let allowedFields = [];
-      if (industryKey && industryFields[industryKey]) {
-        allowedFields = industryFields[industryKey].productFields;
-      } else {
-        // For unknown industries, get all fields from data
-        allowedFields = Array.from(new Set(raw.flatMap(r => {
-          const keys = Object.keys(r);
-          if (r.Product_Details) {
-            keys.push(...Object.keys(r.Product_Details));
-          }
-          return keys;
-        }))).filter(k => k !== 'Product_Details');
-      }
-
-      // Normalize records with only allowed fields
-      const prodRecords = raw.map(r => normalizeRecord(r, allowedFields));
-      console.log('Normalized product records:', prodRecords);
-      console.log('Allowed fields:', allowedFields);
-
-      // Get fields to show - only those in allowedFields that have data
+      // Determine which fields to show - ALWAYS use configured fields for known industries
       let fieldsToShow = [];
       
       if (industryKey && industryFields[industryKey]) {
-        // Show ONLY the configured fields for this industry that have data
-        const configuredFields = industryFields[industryKey].productFields;
-        
-        configuredFields.forEach(f => {
-          const hasData = prodRecords.some(record => {
-            const value = record[f];
-            return value !== undefined && value !== null && value !== '' && value !== 'N/A';
-          });
-          
-          if (hasData) {
-            fieldsToShow.push(f);
-          }
+        // For KNOWN industries: Show ALL configured fields in the specified order
+        fieldsToShow = industryFields[industryKey].productFields.filter(field => {
+          // Exclude system fields
+          return !['ID', 'ROWID', 'CREATORID', 'MODIFIEDTIME', 'Product_Details'].includes(field);
         });
-        
-        console.log('Showing ONLY configured fields for', industryKey, ':', fieldsToShow);
+        console.log(`Showing ALL configured fields for ${industryKey}:`, fieldsToShow);
       } else {
-        // Unknown industry - show fields that have data
-        fieldsToShow = allowedFields.filter(key => {
-          return prodRecords.some(record => {
-            const value = record[key];
-            return value !== undefined && value !== null && value !== '' && value !== 'N/A';
+        // For UNKNOWN industries: Show all fields that exist in ANY record
+        const allFieldsSet = new Set();
+        prodRecords.forEach(record => {
+          Object.keys(record).forEach(key => {
+            if (!['ID', 'ROWID', 'CREATORID', 'MODIFIEDTIME', 'Product_Details'].includes(key)) {
+              allFieldsSet.add(key);
+            }
           });
         });
-        console.log('Unknown industry, showing all fields with data:', fieldsToShow);
+        fieldsToShow = Array.from(allFieldsSet);
+        console.log('Unknown industry, showing all available fields:', fieldsToShow);
       }
 
       // If no fields to show, display message
@@ -357,32 +336,34 @@ function fetchAndShowDetails(jobNo, parentRecord) {
       }
 
       // Build table header with custom labels
-      let ph = '<tr>';
-      fieldsToShow.forEach(f => {
-        let label = f.replace(/_/g, ' ');
+      let tableHTML = '<table><thead><tr>';
+      fieldsToShow.forEach(field => {
+        let label = field.replace(/_/g, ' ');
         
-        // Use custom label if defined
-        if (industryKey && industryFields[industryKey]?.fieldLabels?.[f]) {
-          label = industryFields[industryKey].fieldLabels[f];
+        // Use custom label if defined for this industry
+        if (industryKey && industryFields[industryKey]?.fieldLabels?.[field]) {
+          label = industryFields[industryKey].fieldLabels[field];
         }
         
-        ph += `<th>${label}</th>`;
+        tableHTML += `<th>${label}</th>`;
       });
-      ph += '</tr>';
+      tableHTML += '</tr></thead><tbody>';
 
-      // Build table body
-      let pv = '';
-      prodRecords.forEach(pr => {
-        pv += '<tr>';
-        fieldsToShow.forEach(f => {
-          const value = pr[f];
-          const displayValue = (value !== undefined && value !== null && value !== '' && value !== 'N/A') ? value : '-';
-          pv += `<td>${displayValue}</td>`;
+      // Build table body - show ALL configured fields even if empty
+      prodRecords.forEach(record => {
+        tableHTML += '<tr>';
+        fieldsToShow.forEach(field => {
+          const value = record[field];
+          // Show '-' for empty/falsy values, otherwise show the value
+          const displayValue = value ? value : '-';
+          tableHTML += `<td>${displayValue}</td>`;
         });
-        pv += '</tr>';
+        tableHTML += '</tr>';
       });
 
-      $("#detailProduct").html(`<table><thead>${ph}</thead><tbody>${pv}</tbody></table>`);
+      tableHTML += '</tbody></table>';
+      $("#detailProduct").html(tableHTML);
+      
     } else {
       console.warn('No product details found');
       $("#detailProduct").html('<p class="text-muted">No product details found</p>');
@@ -390,54 +371,54 @@ function fetchAndShowDetails(jobNo, parentRecord) {
 
     // Process Consumption Details
     if (consResp && consResp.code === 3000 && consResp.data && consResp.data.length) {
-      const consRecords = consResp.data.map(record => {
-        const normalized = {};
-        Object.entries(record).forEach(([key, value]) => {
-          const extractedValue = getFieldValue(value);
-          // Only store non-empty values
-          if (extractedValue !== '' && extractedValue !== null && extractedValue !== undefined) {
-            normalized[key] = extractedValue;
-          }
-        });
-        return normalized;
-      });
+      const rawConsRecords = consResp.data;
+      const consRecords = rawConsRecords.map(normalizeRecord);
       
       console.log('Normalized consumption records:', consRecords);
       
-      // Get all keys that have actual data
-      const allKeys = Array.from(new Set(consRecords.flatMap(r => Object.keys(r))));
-      const keysWithData = allKeys.filter(key => {
-        return consRecords.some(record => {
-          const value = record[key];
-          return value !== undefined && value !== null && value !== '' && value !== 'N/A';
+      // Get all unique fields across all records
+      const allFieldsSet = new Set();
+      consRecords.forEach(record => {
+        Object.keys(record).forEach(key => {
+          if (!['ID', 'ROWID', 'CREATORID', 'MODIFIEDTIME'].includes(key)) {
+            allFieldsSet.add(key);
+          }
         });
       });
       
-      if (keysWithData.length === 0) {
+      const fieldsToShow = Array.from(allFieldsSet);
+      
+      if (fieldsToShow.length === 0) {
         $("#detailConsumption").html('<p class="text-muted">No consumption details available</p>');
         return;
       }
 
-      let ch = '<tr>';
-      keysWithData.forEach(k => ch += `<th>${k.replace(/_/g, ' ')}</th>`);
-      ch += '</tr>';
+      // Build table header
+      let tableHTML = '<table><thead><tr>';
+      fieldsToShow.forEach(field => {
+        tableHTML += `<th>${field.replace(/_/g, ' ')}</th>`;
+      });
+      tableHTML += '</tr></thead><tbody>';
 
-      let cv = '';
-      consRecords.forEach(cr => {
-        cv += '<tr>';
-        keysWithData.forEach(k => {
-          const value = cr[k];
-          const displayValue = (value !== undefined && value !== null && value !== '' && value !== 'N/A') ? value : '-';
-          cv += `<td>${displayValue}</td>`;
+      // Build table body
+      consRecords.forEach(record => {
+        tableHTML += '<tr>';
+        fieldsToShow.forEach(field => {
+          const value = record[field];
+          const displayValue = value ? value : '-';
+          tableHTML += `<td>${displayValue}</td>`;
         });
-        cv += '</tr>';
+        tableHTML += '</tr>';
       });
 
-      $("#detailConsumption").html(`<table><thead>${ch}</thead><tbody>${cv}</tbody></table>`);
+      tableHTML += '</tbody></table>';
+      $("#detailConsumption").html(tableHTML);
+      
     } else {
       console.warn('No consumption details found');
       $("#detailConsumption").html('<p class="text-muted">No consumption details found</p>');
     }
+    
   }).catch(err => {
     console.error('Error fetching details:', err);
     $("#detailProduct").html('<p class="text-danger">Error loading product details</p>');
