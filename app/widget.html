@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orders</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  
+  <!-- Main Container -->
+  <div class="container">
+    
+    <!-- Header -->
+    <header>
+      <h1>Orders</h1>
+    </header>
+
+    <!-- Filter Section -->
+    <div class="filter-bar">
+      <input type="text" id="filterJobNo" placeholder="Job No">
+      <input type="text" id="filterClient" placeholder="Client Name">
+      <select id="filterIndustry">
+        <option value="">All Industries</option>
+      </select>
+    </div>
+
+    <!-- Main Table -->
+    <div class="table-wrapper">
+      <table id="jobTable">
+        <thead>
+          <tr>
+            <th>Job No</th>
+            <th>Client Name</th>
+            <th>Job Type</th>
+            <th>Industry</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- Full Page Detail View -->
+  <div id="detailView" class="detail-view">
+    
+    <!-- Header with Back Button -->
+    <div class="detail-header">
+      <button id="backBtn" class="back-btn">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Back
+      </button>
+      <h2>Job Details</h2>
+    </div>
+
+    <!-- Detail Content -->
+    <div class="detail-content">
+      
+      <!-- Job Summary -->
+      <section class="detail-section">
+        <h3>Summary</h3>
+        <div id="detailSummary" class="detail-grid"></div>
+      </section>
+
+      <!-- Product Details -->
+      <section class="detail-section">
+        <h3>Product Details</h3>
+        <div id="detailProduct" class="detail-table-wrapper"></div>
+      </section>
+
+      <!-- Consumption Details -->
+      <section class="detail-section">
+        <h3>Consumption Details</h3>
+        <div id="detailConsumption" class="detail-table-wrapper"></div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+  <script src="https://js.zohostatic.com/creator/widgets/version/1.0/widgetsdk-min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "service": "CREATOR",
+  "version": "1.0",
+  "type": "widget",
+  "name": "All Orders Widget",
+  "scope": {
+    "data": {
+      "read": true,
+      "write": false
+    }
+  },
+  "cspDomains": {
+    "connect-src": [
+      "https://creatorapp.zoho.com",
+      "https://creator.zoho.com",
+      "https://cdn.jsdelivr.net",
+      "https://code.jquery.com",
+      "https://cdn.datatables.net"
+    ],
+    "style-src": [
+      "https://cdn.jsdelivr.net",
+      "https://cdn.datatables.net"
+    ]
+  }
+}
