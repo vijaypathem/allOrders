@@ -1,13 +1,14 @@
 // Main application state
 let allRecords = [];
 let uniqueIndustries = new Set();
+let groupedRecords = {};
 
 // ===============================
 // Helper: Extract Display Value from Zoho Fields
 // ===============================
 function getFieldValue(field) {
   // Handle lookup fields (objects with display_value)
-  if (typeof field === 'object') {
+  if (typeof field === 'object' && field !== null) {
     // For multi-select or lookup collections
     if (Array.isArray(field)) {
       const values = field.map(item => getFieldValue(item)).filter(v => v);
@@ -17,16 +18,40 @@ function getFieldValue(field) {
     // Check for display_value first (most common for lookup fields)
     if (field.display_value !== undefined && field.display_value !== null) {
       return field.display_value;
-    }else {
-      return field;
     }
     
+    // Check for value property
+    if (field.value !== undefined && field.value !== null) {
+      return field.value;
+    }
     
-
+    // If object but no usable value, return empty string
+    return '';
   }
   
-  // Handle regular values - return as is (could be empty string, number, etc.)
-  return field ;
+  // Handle regular values
+  return field || '';
+}
+
+// ===============================
+// Helper: Get Product Details String
+// ===============================
+function getProductDetailsString(record) {
+  // Try to get product details from the record
+  const productName = getFieldValue(record.Product_Name);
+  const productDetails = getFieldValue(record.Product_Details);
+  
+  if (productName) return productName;
+  if (productDetails) return productDetails;
+  
+  // Try to extract from Product_Details field if it's an array or object
+  if (record.Product_Details) {
+    if (Array.isArray(record.Product_Details)) {
+      return record.Product_Details.map(p => getFieldValue(p.Product_Name || p)).filter(v => v).join(', ');
+    }
+  }
+  
+  return '-';
 }
 
 // ===============================
@@ -36,11 +61,12 @@ function initializeZoho() {
   ZOHO.CREATOR.init()
     .then(function () {
       console.log('Zoho Creator initialized successfully');
+     
       fetchAllRecords();
     })
     .catch(function (error) {
       console.error("Initialization Error:", error);
-      $("#jobTable tbody").html('<tr><td colspan="5" class="text-danger">Error initializing Zoho Creator</td></tr>');
+      $("#jobTable tbody").html('<tr><td colspan="10" class="text-danger">Error initializing Zoho Creator</td></tr>');
     });
 }
 
@@ -54,6 +80,7 @@ function callZohoGetAllRecords(config, retries = 1, delay = 600) {
       ZOHO.CREATOR.API.getAllRecords(config)
         .then(function (resp) {
           console.log('Zoho API response:', resp);
+          
           if (resp && resp.code === 3000) {
             resolve(resp);
           } else {
@@ -84,7 +111,7 @@ function callZohoGetAllRecords(config, retries = 1, delay = 600) {
 function populateIndustryFilter() {
   const filterSelect = $("#filterIndustry");
   
-  // Clear existing options except the default "All Industries"
+  // Clear existing options except the default
   filterSelect.find('option:not(:first)').remove();
   
   // Sort industries alphabetically
@@ -112,8 +139,7 @@ function fetchAllRecords() {
   function fetchPage() {
     const config = {
       appName: "zoma",
-      reportName: "All_Orders_Design",
-      criteria: "(Design_Status == \"Under Design\")",
+      reportName: "Unassigned_Jobs1",
       page: page,
       pageSize: pageSize
     };
@@ -143,11 +169,11 @@ function fetchAllRecords() {
           }
         } else if (response && response.error) {
           console.error('Error fetching records:', response.errorObj || response);
-          $("#jobTable tbody").html('<tr><td colspan="5" class="text-danger">Error fetching records</td></tr>');
+          $("#jobTable tbody").html('<tr><td colspan="10" class="text-danger">Error fetching records</td></tr>');
         } else {
           const msg = (response && response.message) ? response.message : 'No records found';
           console.warn('No records found:', response);
-          $("#jobTable tbody").html(`<tr><td colspan="5" class="text-muted">${msg}</td></tr>`);
+          $("#jobTable tbody").html(`<tr><td colspan="10" class="text-muted">${msg}</td></tr>`);
         }
       });
   }
@@ -156,36 +182,119 @@ function fetchAllRecords() {
 }
 
 // ===============================
-// Render Main Table
+// Group Records by Global Status
+// ===============================
+function groupRecordsByStatus(data) {
+  groupedRecords = {
+    'Under Design': [],
+    'Await BOM': []
+  };
+  
+  data.forEach(record => {
+    const status = getFieldValue(record.Global_Status);
+    if (groupedRecords[status]) {
+      groupedRecords[status].push(record);
+    }
+  });
+  
+  return groupedRecords;
+}
+
+// ===============================
+// Render Main Table with Grouping
 // ===============================
 function renderTable(data) {
   const tbody = $("#jobTable tbody");
   tbody.empty();
 
   if (!data.length) {
-    tbody.html('<tr><td colspan="5" class="text-muted">No records found</td></tr>');
+    tbody.html('<tr><td colspan="10" class="text-muted">No records found</td></tr>');
     return;
   }
 
   console.log('Rendering table with', data.length, 'records');
 
-  data.forEach(record => {
-    const jobNo = getFieldValue(record.Job_No);
-    const clientName = getFieldValue(record.Client_Name);
-    const jobType = getFieldValue(record.Job_Type);
-    const industry = getFieldValue(record.Industry);
-    const status = getFieldValue(record.Global_Status);
+  // Group records by status
+  const grouped = groupRecordsByStatus(data);
+  
+  // Render each group
+  Object.keys(grouped).forEach(statusGroup => {
+    const records = grouped[statusGroup];
     
-    const row = `
-      <tr data-jobno="${jobNo || ''}" data-record-id="${record.ID}">
-        <td>${jobNo || '-'}</td>
-        <td>${clientName || '-'}</td>
-        <td>${jobType || '-'}</td>
-        <td>${industry || '-'}</td>
-        <td>${status || '-'}</td>
-      </tr>`;
-    tbody.append(row);
+    if (records.length > 0) {
+      // Add group banner
+      const bannerClass = statusGroup.toLowerCase().replace(' ', '-');
+      const bannerRow = `
+        <tr class="status-group-banner ${bannerClass}" data-group="${statusGroup}">
+          <td colspan="10">
+            <span class="arrow">▼</span>
+            ${statusGroup} (${records.length})
+          </td>
+        </tr>
+      `;
+      tbody.append(bannerRow);
+      
+      // Add records in this group
+      records.forEach(record => {
+        renderRecord(tbody, record, statusGroup);
+      });
+    }
   });
+  
+  // Add click handler for group banners
+  $(".status-group-banner").on("click", function() {
+    const group = $(this).data("group");
+    $(this).toggleClass("collapsed");
+    $(`tr[data-group-member="${group}"]`).toggle();
+  });
+}
+
+// ===============================
+// Render Individual Record
+// ===============================
+function renderRecord(tbody, record, groupStatus) {
+  const jobNo = getFieldValue(record.Job_No);
+  const designTaskStatus = getFieldValue(record.Design_Task_Status);
+  const jobPriority = getFieldValue(record.Job_Priority);
+  const jobCreatedDate = getFieldValue(record.Job_Created_Date_Time);
+  const clientName = getFieldValue(record.Client_Name);
+  const jobType = getFieldValue(record.Job_Type);
+  const productDetails = getProductDetailsString(record);
+  const primaryCRM = getFieldValue(record.Primary_CRM_Exe1);
+  const deliveryDate = getFieldValue(record.Requested_Delivery_Date);
+  const globalStatus = getFieldValue(record.Global_Status);
+  
+  // Format task status
+  const taskStatusClass = (designTaskStatus || '').toLowerCase().replace(' ', '-');
+  const taskStatusHTML = designTaskStatus ? 
+    `<span class="task-status ${taskStatusClass}">${designTaskStatus}</span>` : '-';
+  
+  // Format priority
+  const priorityClass = (jobPriority || 'normal').toLowerCase().replace(' ', '-');
+  const priorityHTML = jobPriority ? 
+    `<span class="priority ${priorityClass}">${jobPriority}</span>` : '-';
+  
+  // Format job type
+  const jobTypeClass = (jobType || '').toLowerCase().replace(' ', '-');
+  const jobTypeHTML = jobType && jobType !== 'Normal' ? 
+    `<span class="job-type-badge ${jobTypeClass}">${jobType}</span>` : 
+    (jobType === 'Normal' ? `<span class="job-type-badge normal">Normal</span>` : '-');
+  
+  const row = `
+    <tr data-jobno="${jobNo || ''}" data-record-id="${record.ID}" data-group-member="${groupStatus}">
+      <td>${taskStatusHTML}</td>
+      <td>${priorityHTML}</td>
+      <td><a href="#" class="link-cell">${jobNo || '-'}</a></td>
+      <td>${jobCreatedDate || '-'}</td>
+      <td><a href="#" class="link-cell">${clientName || '-'}</a></td>
+      <td>${jobTypeHTML}</td>
+      <td><a href="#" class="link-cell">${productDetails}</a></td>
+      <td>${primaryCRM || '-'}</td>
+      <td>${deliveryDate || '-'}</td>
+      <td>${globalStatus || '-'}</td>
+    </tr>
+  `;
+  tbody.append(row);
 }
 
 // ===============================
@@ -195,19 +304,22 @@ function applyFilters() {
   const jobFilter = $("#filterJobNo").val().trim().toLowerCase();
   const clientFilter = $("#filterClient").val().trim().toLowerCase();
   const industryFilter = $("#filterIndustry").val().trim();
+  const statusFilter = $("#filterStatus").val().trim();
 
-  console.log('Applying filters:', { jobFilter, clientFilter, industryFilter });
+  console.log('Applying filters:', { jobFilter, clientFilter, industryFilter, statusFilter });
 
   const filtered = allRecords.filter(record => {
     const jobNo = (getFieldValue(record.Job_No) || '').toString().toLowerCase();
     const clientName = (getFieldValue(record.Client_Name) || '').toString().toLowerCase();
     const industry = (getFieldValue(record.Industry) || '').toString();
+    const status = (getFieldValue(record.Global_Status) || '').toString();
     
     const jobMatch = !jobFilter || jobNo.includes(jobFilter);
     const clientMatch = !clientFilter || clientName.includes(clientFilter);
     const industryMatch = !industryFilter || industry === industryFilter;
+    const statusMatch = !statusFilter || status === statusFilter;
     
-    return jobMatch && clientMatch && industryMatch;
+    return jobMatch && clientMatch && industryMatch && statusMatch;
   });
 
   console.log('Filtered records:', filtered.length);
@@ -215,33 +327,28 @@ function applyFilters() {
 }
 
 // ===============================
-// Normalize Record - Extract ALL field values properly
+// Normalize Record
 // ===============================
 function normalizeRecord(record) {
   const normalized = {};
   
-  // Helper to extract from source
   const extractFromSource = (source) => {
     if (!source || typeof source !== 'object') return;
     
     Object.entries(source).forEach(([key, value]) => {
-      // Skip these meta fields
       if (key === 'ID' || key === 'ROWID' || key === 'CREATORID' || key === 'MODIFIEDTIME' || key === 'Product_Details') {
         return;
       }
       
       const extractedValue = getFieldValue(value);
-      // Store ALL fields, even if empty
       normalized[key] = extractedValue;
     });
   };
   
-  // First extract from Product_Details if it exists
   if (record.Product_Details && typeof record.Product_Details === 'object') {
     extractFromSource(record.Product_Details);
   }
   
-  // Then extract from main record (will overwrite if duplicate keys exist)
   extractFromSource(record);
   
   return normalized;
@@ -253,11 +360,9 @@ function normalizeRecord(record) {
 function fetchAndShowDetails(jobNo, parentRecord) {
   console.log('Fetching details for Job No:', jobNo, 'Record ID:', parentRecord.ID);
   
-  // Show loading state
   $("#detailProduct").html('<p class="text-muted">Loading product details...</p>');
   $("#detailConsumption").html('<p class="text-muted">Loading consumption details...</p>');
 
-  // Product details configuration
   const productConfig = {
     appName: "zoma",
     reportName: "Job_Details_Report",
@@ -266,7 +371,6 @@ function fetchAndShowDetails(jobNo, parentRecord) {
     pageSize: 100
   };
 
-  // Consumption details configuration
   const consumptionConfig = {
     appName: "zoma",
     reportName: "Design_Consumption_Report",
@@ -275,48 +379,32 @@ function fetchAndShowDetails(jobNo, parentRecord) {
     pageSize: 100
   };
 
-  // Fetch both in parallel
   Promise.all([
     callZohoGetAllRecords(productConfig, 2).catch(e => ({ error: e })),
     callZohoGetAllRecords(consumptionConfig, 2).catch(e => ({ error: e }))
   ]).then(([prodResp, consResp]) => {
-    
-    console.log('Product response:', prodResp);
-    console.log('Consumption response:', consResp);
-    
-    // Process Product Details
-    if (prodResp && prodResp.code === 3000 && prodResp.data && prodResp.data.length) {
-      const rawRecords = prodResp.data;
-      
-      // Normalize all records
-      const prodRecords = rawRecords.map(normalizeRecord);
-      console.log('Normalized product records:', prodRecords);
+    console.log("product detail data",prodResp);
+    console.log("Cons detail data",consResp);
 
-      // Determine industry
+    
+    if (prodResp && prodResp.code === 3000 && prodResp.data && prodResp.data.length) {
+      const prodRecords = prodResp.data.map(normalizeRecord);
       const industryRaw = getFieldValue(parentRecord.Industry) || getFieldValue(parentRecord.Job_Type) || "";
       let industryKey = "";
       
-      // Match industry key
       if (/tensile/i.test(industryRaw)) {
         industryKey = 'Tensile';
       } else if (/roll.*door/i.test(industryRaw) || /door/i.test(industryRaw)) {
         industryKey = 'Roll Door';
       }
 
-      console.log('Industry detected:', industryKey, 'from:', industryRaw);
-
-      // Determine which fields to show - ALWAYS use configured fields for known industries
       let fieldsToShow = [];
       
       if (industryKey && industryFields[industryKey]) {
-        // For KNOWN industries: Show ALL configured fields in the specified order
         fieldsToShow = industryFields[industryKey].productFields.filter(field => {
-          // Exclude system fields
           return !['ID', 'ROWID', 'CREATORID', 'MODIFIEDTIME', 'Product_Details'].includes(field);
         });
-        console.log(`Showing ALL configured fields for ${industryKey}:`, fieldsToShow);
       } else {
-        // For UNKNOWN industries: Show all fields that exist in ANY record
         const allFieldsSet = new Set();
         prodRecords.forEach(record => {
           Object.keys(record).forEach(key => {
@@ -326,57 +414,40 @@ function fetchAndShowDetails(jobNo, parentRecord) {
           });
         });
         fieldsToShow = Array.from(allFieldsSet);
-        console.log('Unknown industry, showing all available fields:', fieldsToShow);
       }
 
-      // If no fields to show, display message
       if (fieldsToShow.length === 0) {
         $("#detailProduct").html('<p class="text-muted">No product details available</p>');
-        return;
-      }
-
-      // Build table header with custom labels
-      let tableHTML = '<table><thead><tr>';
-      fieldsToShow.forEach(field => {
-        let label = field.replace(/_/g, ' ');
-        
-        // Use custom label if defined for this industry
-        if (industryKey && industryFields[industryKey]?.fieldLabels?.[field]) {
-          label = industryFields[industryKey].fieldLabels[field];
-        }
-        
-        tableHTML += `<th>${label}</th>`;
-      });
-      tableHTML += '</tr></thead><tbody>';
-
-      // Build table body - show ALL configured fields even if empty
-      prodRecords.forEach(record => {
-        tableHTML += '<tr>';
+      } else {
+        let tableHTML = '<table><thead><tr>';
         fieldsToShow.forEach(field => {
-          const value = record[field];
-          // Show '-' for empty/falsy values, otherwise show the value
-          const displayValue = value ? value : '-';
-          tableHTML += `<td>${displayValue}</td>`;
+          let label = field.replace(/_/g, ' ');
+          if (industryKey && industryFields[industryKey]?.fieldLabels?.[field]) {
+            label = industryFields[industryKey].fieldLabels[field];
+          }
+          tableHTML += `<th>${label}</th>`;
         });
-        tableHTML += '</tr>';
-      });
+        tableHTML += '</tr></thead><tbody>';
 
-      tableHTML += '</tbody></table>';
-      $("#detailProduct").html(tableHTML);
-      
+        prodRecords.forEach(record => {
+          tableHTML += '<tr>';
+          fieldsToShow.forEach(field => {
+            const value = record[field];
+            const displayValue = value ? value : '-';
+            tableHTML += `<td>${displayValue}</td>`;
+          });
+          tableHTML += '</tr>';
+        });
+
+        tableHTML += '</tbody></table>';
+        $("#detailProduct").html(tableHTML);
+      }
     } else {
-      console.warn('No product details found');
       $("#detailProduct").html('<p class="text-muted">No product details found</p>');
     }
 
-    // Process Consumption Details
     if (consResp && consResp.code === 3000 && consResp.data && consResp.data.length) {
-      const rawConsRecords = consResp.data;
-      const consRecords = rawConsRecords.map(normalizeRecord);
-      
-      console.log('Normalized consumption records:', consRecords);
-      
-      // Get all unique fields across all records
+      const consRecords = consResp.data.map(normalizeRecord);
       const allFieldsSet = new Set();
       consRecords.forEach(record => {
         Object.keys(record).forEach(key => {
@@ -390,32 +461,27 @@ function fetchAndShowDetails(jobNo, parentRecord) {
       
       if (fieldsToShow.length === 0) {
         $("#detailConsumption").html('<p class="text-muted">No consumption details available</p>');
-        return;
-      }
-
-      // Build table header
-      let tableHTML = '<table><thead><tr>';
-      fieldsToShow.forEach(field => {
-        tableHTML += `<th>${field.replace(/_/g, ' ')}</th>`;
-      });
-      tableHTML += '</tr></thead><tbody>';
-
-      // Build table body
-      consRecords.forEach(record => {
-        tableHTML += '<tr>';
+      } else {
+        let tableHTML = '<table><thead><tr>';
         fieldsToShow.forEach(field => {
-          const value = record[field];
-          const displayValue = value ? value : '-';
-          tableHTML += `<td>${displayValue}</td>`;
+          tableHTML += `<th>${field.replace(/_/g, ' ')}</th>`;
         });
-        tableHTML += '</tr>';
-      });
+        tableHTML += '</tr></thead><tbody>';
 
-      tableHTML += '</tbody></table>';
-      $("#detailConsumption").html(tableHTML);
-      
+        consRecords.forEach(record => {
+          tableHTML += '<tr>';
+          fieldsToShow.forEach(field => {
+            const value = record[field];
+            const displayValue = value ? value : '-';
+            tableHTML += `<td>${displayValue}</td>`;
+          });
+          tableHTML += '</tr>';
+        });
+
+        tableHTML += '</tbody></table>';
+        $("#detailConsumption").html(tableHTML);
+      }
     } else {
-      console.warn('No consumption details found');
       $("#detailConsumption").html('<p class="text-muted">No consumption details found</p>');
     }
     
@@ -427,7 +493,7 @@ function fetchAndShowDetails(jobNo, parentRecord) {
 }
 
 // ===============================
-// Show Job Details in Full Page View
+// Show Job Details
 // ===============================
 function showJobDetails(jobNo) {
   const record = allRecords.find(r => getFieldValue(r.Job_No) === jobNo);
@@ -435,10 +501,10 @@ function showJobDetails(jobNo) {
     console.error('No record found for Job No:', jobNo);
     return;
   }
+  console.log('Primary_CRM_Exe1 value:', record.Primary_CRM_Exe1.display_value);
+  console.log('Full record object:', record);
+  
 
-  console.log('Showing details for record:', record);
-
-  // Populate summary
   const summaryHTML = `
     <div class="detail-item">
       <span class="detail-label">Job No</span>
@@ -457,12 +523,22 @@ function showJobDetails(jobNo) {
       <span class="detail-value">${getFieldValue(record.Job_Type) || '-'}</span>
     </div>
     <div class="detail-item">
-      <span class="detail-label">Delivery Date</span>
-      <span class="detail-value">${getFieldValue(record.Requested_Delivery_Date) || '-'}</span>
+      <span class="detail-label">Job Priority</span>
+      <span class="detail-value">${getFieldValue(record.Job_Priority) || '-'}</span>
     </div>
     <div class="detail-item">
-      <span class="detail-label">Job Stage</span>
-      <span class="detail-value">${getFieldValue(record.Job_Stage) || '-'}</span>
+      <span class="detail-label">Design Task Status</span>
+      <span class="detail-value">${getFieldValue(record.Design_Task_Status) || '-'}</span>
+    </div>
+    <div class="detail-item">
+      <span class="detail-label">Primary CRM</span>
+      
+      <span class="detail-value">${getFieldValue(record.Primary_CRM_Exe1 || record.Primary_CRM) || '-'}</span>
+    </div>
+  
+    <div class="detail-item">
+      <span class="detail-label">Delivery Date</span>
+      <span class="detail-value">${getFieldValue(record.Requested_Delivery_Date) || '-'}</span>
     </div>
     <div class="detail-item">
       <span class="detail-label">Status</span>
@@ -471,11 +547,7 @@ function showJobDetails(jobNo) {
   `;
 
   $("#detailSummary").html(summaryHTML);
-
-  // Fetch and display product/consumption details
   fetchAndShowDetails(jobNo, record);
-
-  // Show detail view with animation
   $("#detailView").addClass('active');
 }
 
@@ -492,23 +564,65 @@ function hideJobDetails() {
 $(document).ready(() => {
   console.log('Document ready, initializing application...');
   
-  // Initialize Zoho
   initializeZoho();
 
-  // Filter events
   $("#filterJobNo, #filterClient").on("input", applyFilters);
-  $("#filterIndustry").on("change", applyFilters);
+  $("#filterIndustry, #filterStatus").on("change", applyFilters);
 
-  // Row click event - show full page detail view
-  $(document).on("click", "#jobTable tbody tr", function() {
+  $(document).on("click", "#jobTable tbody tr:not(.status-group-banner)", function() {
     const jobNo = $(this).data("jobno");
-    console.log('Row clicked, Job No:', jobNo);
-    showJobDetails(jobNo);
+    if (jobNo) {
+      showJobDetails(jobNo);
+    }
   });
 
-  // Back button event
-  $("#backBtn").on("click", function() {
-    console.log('Back button clicked');
-    hideJobDetails();
-  });
+  $("#backBtn").on("click", hideJobDetails);
 });
+ function autoAdjustColumnWidth(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+
+    const ths = table.querySelectorAll("thead th");
+    const colCount = ths.length;
+
+    for (let col = 0; col < colCount; col++) {
+      let maxWidth = 0;
+
+      // Include header width
+      const headerText = ths[col].innerText.trim();
+      const headerWidth = headerText.length * 8; // base width per character
+      maxWidth = Math.max(maxWidth, headerWidth);
+
+      // Check all rows
+      table.querySelectorAll("tbody tr").forEach(tr => {
+        const cell = tr.cells[col];
+        if (cell) {
+          const cellText = cell.innerText.trim();
+          const textWidth = cellText.length * 7; // approximate character width
+          maxWidth = Math.max(maxWidth, textWidth);
+        }
+      });
+
+      // Set column width (minimum 100px)
+      ths[col].style.minWidth = Math.max(100, maxWidth) + "px";
+      ths[col].style.width = Math.max(100, maxWidth) + "px";
+    }
+  }
+
+  // Run after table is populated
+  $(document).ready(function () {
+    const tableId = "jobTable";
+    
+    // Observe for data changes (useful if table loads async)
+    const observer = new MutationObserver(() => {
+      autoAdjustColumnWidth(tableId);
+    });
+
+    const tbody = document.querySelector(`#${tableId} tbody`);
+    if (tbody) {
+      observer.observe(tbody, { childList: true, subtree: true });
+    }
+
+    // Initial run in case data already exists
+    autoAdjustColumnWidth(tableId);
+  });

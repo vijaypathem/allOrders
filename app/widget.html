@@ -1,91 +1,496 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Orders</title>
-  <link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unassigned Jobs</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* BASE & TYPOGRAPHY */
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: auto; /* Allow automatic column sizing */
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #fcfcfc; /* Very light background for premium feel */
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 100%;
+            padding: 24px;
+        }
+
+        /* HEADER */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        header h1 {
+            font-size: 26px;
+            font-weight: 700;
+            color: #1a202c;
+        }
+
+        /* FILTER BAR */
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .filter-bar input,
+        .filter-bar select {
+            padding: 10px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 160px;
+            transition: border-color 0.2s;
+        }
+
+        .filter-bar input:focus,
+        .filter-bar select:focus {
+            border-color: #3182ce;
+            outline: none;
+            box-shadow: 0 0 0 1px #3182ce;
+        }
+
+        /* MAIN TABLE */
+        .table-wrapper {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f0f3f7;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            padding: 14px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 12px;
+            color: #4a5568;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        /* --- TABLE ROW DIFFERENTIATION (Zebra Striping) --- */
+        tbody tr {
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: #fcfcfc; /* Very light subtle distinction */
+        }
+        
+        tbody tr:nth-child(odd) {
+            background-color: #ffffff;
+        }
+
+        tbody tr:hover {
+            background: #f0f3f7; /* Hover color matches header shade */
+        }
+
+        tbody tr:last-child {
+            border-bottom: none;
+        }
+
+        td {
+            padding: 14px;
+            font-size: 14px;
+            color: #333;
+        }
+
+        /* --- STATUS GROUP BANNER (Redefined for Aesthetic/Small Look) --- */
+
+        
+        /* NEW Under Design Colors: Darker Shade of Header Shade */
+     
+
+   
+        
+        /* TASK STATUS (Small & Aesthetic Badge) */
+        .task-status {
+            padding: 4px 8px;
+            border-radius: 16px;
+            font-size: 11px;
+            font-weight: 600;
+            display: inline-block;
+            min-width: 65px;
+            text-align: center;
+            letter-spacing: 0.3px;
+        }
+        
+        .task-status.not-started {
+            background: #e6f7ff;
+            color: #1890ff;
+        }
+
+        .task-status.on-hold {
+            background: #fffbe6;
+            color: #faad14;
+        }
+        
+        /* PRIORITY (Subtle Badges) */
+        .priority {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            display: inline-block;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .priority.normal {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+
+        .priority.urgent {
+            background: #ffedd5;
+            color: #dd6b20;
+        }
+
+        .priority.very-urgent {
+            background: #fed7d7;
+            color: #e53e3e;
+        }
+
+        /* JOB TYPE BADGE */
+        .job-type-badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            background: #90cdf4;
+            color: #1a202c;
+            display: inline-block;
+            font-weight: 500;
+        }
+
+        .job-type-badge.normal {
+            background: #a0aec0;
+            color: #1a202c;
+        }
+
+        /* LINK STYLE */
+        .link-cell {
+            color: #3182ce;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .link-cell:hover {
+            color: #2b6cb0;
+            text-decoration: underline;
+        }
+
+        /* DETAIL VIEW (Full Page Modal) */
+        .detail-view {
+            position: fixed;
+            top: 0;
+            right: -100%;
+            width: 100%;
+            height: 100vh;
+            background: white;
+            box-shadow: -4px 0 20px rgba(0,0,0,0.1);
+            transition: right 0.3s ease-out;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .detail-view.active {
+            right: 0;
+        }
+
+        .detail-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e2e8f0;
+            background: white;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .detail-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a202c;
+        }
+
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 8px 16px;
+            border: 1px solid #cbd5e0;
+            background: #f7fafc;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #4a5568;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background: #e2e8f0;
+            color: #1a202c;
+        }
+
+        .detail-content {
+            padding: 24px;
+        }
+
+        .detail-section {
+            margin-bottom: 30px;
+            border-radius: 8px;
+            padding: 20px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+        }
+
+        .detail-section h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2d3748;
+            border-bottom: 2px solid #f7fafc;
+            padding-bottom: 8px;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            color: #718096;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            color: #1a202c;
+            font-weight: 500;
+        }
+
+        /* MAKE MAIN TABLE SCROLLABLE */
+.table-wrapper {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    overflow-x: auto; /* Horizontal scroll */
+    overflow-y: auto; /* Vertical scroll if needed */
+    max-height: 75vh; /* Limit height to viewport for usability */
+}
+
+/* FIXED HEADER DURING SCROLL */
+.table-wrapper table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table-wrapper thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f0f3f7;
+}
+/* Increase width for "Design Task Status" column */
+#jobTable th:nth-child(1),
+#jobTable td:nth-child(1) {
+    min-width: 220px;  /* previously auto — now fixed wider */
+    width: 220px;
+    white-space: nowrap; /* prevent text wrapping */
+}
+
+        /* DETAIL TABLE (Product & Consumption) */
+        .detail-table-wrapper table {
+            width: 100%;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .detail-table-wrapper th {
+            background: #f7fafc;
+            font-size: 12px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .detail-table-wrapper td {
+            font-size: 13px;
+        }
+        
+        .scroll-table {
+            overflow-x: auto;
+        }
+
+        .text-muted {
+            color: #a0aec0;
+            font-style: italic;
+        }
+
+        .text-danger {
+            color: #e53e3e;
+            font-weight: 500;
+        }
+
+        /* MEDIA QUERIES */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            header h1 {
+                font-size: 20px;
+            }
+            .filter-bar {
+                flex-direction: column;
+            }
+            .filter-bar input,
+            .filter-bar select {
+                width: 100%;
+            }
+            th, td {
+                padding: 10px;
+                font-size: 12px;
+            }
+        }
+             /* Apple-inspired minimalist aesthetic colors */
+        .status-group-banner.under-design {
+            background: #f5f5f7; /* Apple's signature light gray */
+            border-left-color: #007aff; /* Apple blue accent */
+            color: #1d1d1f; /* Apple's dark gray text */
+        }
+
+        .status-group-banner.await-bom {
+            background: #fafafa; /* Ultra-light minimalist gray */
+            border-left-color: #ff9500; /* Apple orange accent */
+            color: #1d1d1f; /* Apple's dark gray text */
+        }
+    </style>
 </head>
 <body>
-  
-  <!-- Main Container -->
-  <div class="container">
     
-    <!-- Header -->
-    <header>
-      <h1>Orders</h1>
-    </header>
+    <div class="container">
+        
+        <header>
+            <h1>Unassigned Jobs</h1>
+        </header>
 
-    <!-- Filter Section -->
-    <div class="filter-bar">
-      <input type="text" id="filterJobNo" placeholder="Job No">
-      <input type="text" id="filterClient" placeholder="Client Name">
-      <select id="filterIndustry">
-        <option value="">All Industries</option>
-      </select>
-    </div>
+        <div class="filter-bar">
+            <input type="text" id="filterJobNo" placeholder="Job No">
+            <input type="text" id="filterClient" placeholder="Client Name">
+            <select id="filterIndustry">
+                <option value="">All Industries</option>
+            </select>
+            <select id="filterStatus">
+                <option value="">All Statuses</option>
+                <option value="Under Design">Under Design</option>
+                <option value="Await BOM">Await BOM</option>
+            </select>
+        </div>
 
-    <!-- Main Table -->
-    <div class="table-wrapper">
-      <table id="jobTable">
-        <thead>
-          <tr>
-            <th>Job No</th>
-            <th>Client Name</th>
-            <th>Job Type</th>
-            <th>Industry</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-  </div>
-
-  <!-- Full Page Detail View -->
-  <div id="detailView" class="detail-view">
-    
-    <!-- Header with Back Button -->
-    <div class="detail-header">
-      <button id="backBtn" class="back-btn">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        Back
-      </button>
-      <h2>Job Details</h2>
-    </div>
-
-    <!-- Detail Content -->
-    <div class="detail-content">
-      
-      <!-- Job Summary -->
-      <section class="detail-section">
-        <h3>Summary</h3>
-        <div id="detailSummary" class="detail-grid"></div>
-      </section>
-
-      <!-- Product Details -->
-      <section class="detail-section">
-        <h3>Product Details</h3>
-        <div id="detailProduct" class="detail-table-wrapper"></div>
-      </section>
-
-      <!-- Consumption Details -->
-      <section class="detail-section">
-        <h3>Consumption Details</h3>
-        <div id="detailConsumption" class="detail-table-wrapper"></div>
-      </section>
+        <div class="table-wrapper">
+            <table id="jobTable">
+                <thead>
+                    <tr>
+                        <th>Design Task Status</th>
+                        <th>Job Priority</th>
+                        <th>Job No</th>
+                        <th>Job Created Date & Time</th>
+                        <th>Client Name</th>
+                        <th>Job Type</th>
+                        <th>Product Details</th>
+                        <th>Primary CRM</th>
+                        <th>Requested Delivery Date</th>
+                        <th>Global Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
 
     </div>
-  </div>
 
-  <!-- Scripts -->
-  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
-  <script src="https://js.zohostatic.com/creator/widgets/version/1.0/widgetsdk-min.js"></script>
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+    <div id="detailView" class="detail-view">
+        
+        <div class="detail-header">
+            <button id="backBtn" class="back-btn">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M12.5 15L7.5 10L12.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Back
+            </button>
+            <h2>Job Details</h2>
+        </div>
+
+        <div class="detail-content">
+            
+            <section class="detail-section">
+                <h3>Summary</h3>
+                <div id="detailSummary" class="detail-grid"></div>
+            </section>
+
+            <section class="detail-section">
+                <h3>Product Details</h3>
+                <div id="detailProduct" class="detail-table-wrapper"></div>
+            </section>
+
+            <section class="detail-section">
+                <h3>Consumption Details</h3>
+                <div id="detailConsumption" class="detail-table-wrapper"></div>
+            </section>
+
+
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://js.zohostatic.com/creator/widgets/version/1.0/widgetsdk-min.js"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
 
 </body>
 </html>
